@@ -1,7 +1,13 @@
-.PHONY: help test lint
+.PHONY: help up down test lint
 
 help:
-	@echo "targets: test lint"
+	@echo "targets: up down test lint"
+
+up:
+	docker compose up -d
+
+down:
+	docker compose down
 
 test:
 	uv run pytest
