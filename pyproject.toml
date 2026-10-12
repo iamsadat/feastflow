@@ -1,10 +1,13 @@
 [project]
 name = "feastflow"
 version = "0.1.0"
-description = "End-to_end data engineering project"
+description = "End-to-end data engineering project"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "delta-spark==3.2.1",
+    "pyspark==3.5.3",
+]
 
 [project.scripts]
 feastflow = "feastflow:main"
