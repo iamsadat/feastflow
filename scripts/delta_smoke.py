@@ -1,4 +1,5 @@
 """Write a Delta table to MinIO, read it back, update it, and show the history."""
+
 import os
 import sys
 

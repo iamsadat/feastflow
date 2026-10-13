@@ -28,27 +28,27 @@ wheels = [
 name = "feastflow"
 version = "0.1.0"
 source = { editable = "." }
-dependencies = [
-    { name = "delta-spark" },
-    { name = "pyspark" },
-]
 
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
     { name = "ruff" },
 ]
+spark = [
+    { name = "delta-spark" },
+    { name = "pyspark" },
+]
 
 [package.metadata]
-requires-dist = [
-    { name = "delta-spark", specifier = "==3.2.1" },
-    { name = "pyspark", specifier = "==3.5.3" },
-]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "ruff", specifier = ">=0.16.10" },
+]
+spark = [
+    { name = "delta-spark", specifier = "==3.2.1" },
+    { name = "pyspark", specifier = "==3.5.3" },
 ]
 
 [[package]]
