@@ -4,10 +4,7 @@ version = "0.1.0"
 description = "End-to-end data engineering project"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = [
-    "delta-spark==3.2.1",
-    "pyspark==3.5.3",
-]
+dependencies = []
 
 [project.scripts]
 feastflow = "feastflow:main"
@@ -20,4 +17,8 @@ build-backend = "uv_build"
 dev = [
     "pytest>=9.1.1",
     "ruff>=0.16.10",
+]
+spark = [
+    "delta-spark==3.2.1",
+    "pyspark==3.5.3",
 ]
