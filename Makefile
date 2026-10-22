@@ -1,7 +1,7 @@
-.PHONY: help up down test lint
+.PHONY: help up down test lint migrate seed
 
 help:
-	@echo "targets: up down test lint"
+	@echo "targets: up down test lint migrate seed" 
 
 up:
 	docker compose up -d
@@ -14,3 +14,11 @@ test:
 
 lint:
 	uv run ruff check .
+
+RUN = uv run --env-file .env python
+
+migrate:
+	$(RUN) db/migrate.py
+
+seed:
+	$(RUN) db/seed.py
