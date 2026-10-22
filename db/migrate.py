@@ -122,7 +122,7 @@ def apply_migration(conn, path):
         print(f"APPLIED  {version}", flush=True)
 
     except Exception as exc:
-        raise RuntimeError(f"{version}: {exc}", file=sys.stderr)
+        raise RuntimeError(f"{version}: {exc}") from exc
 
 
 def run_migrations():
