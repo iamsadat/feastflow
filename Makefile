@@ -1,7 +1,7 @@
-.PHONY: help up down test lint migrate seed connect-register connect-status generate
+.PHONY: help up down test lint migrate seed connect-register connect-status generate sink test-integration
 
 help:
-	@echo "targets: up down test lint migrate seed generate" 
+	@echo "targets: up down test lint migrate seed generate sink" 
 
 up:
 	docker compose up -d
@@ -31,3 +31,9 @@ connect-register:
 
 connect-status:
 	curl -s localhost:8083/connectors/feastflow-pg/status
+
+sink:
+	$(RUN) ingest/kafka_to_s3.py
+
+test-integration:
+	uv run --env-file .env pytest -m integration

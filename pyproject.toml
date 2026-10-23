@@ -5,6 +5,8 @@ description = "End-to-end data engineering project"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "boto3>=1.43.118",
+    "confluent-kafka>=2.16.0",
     "psycopg[binary]>=3.3.6",
 ]
 
@@ -23,4 +25,9 @@ dev = [
 spark = [
     "delta-spark==3.2.1",
     "pyspark==3.5.3",
+]
+
+[tool.pytest.ini_options]
+markers = [
+    "integration: needs the compose stack running"
 ]
