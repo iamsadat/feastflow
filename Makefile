@@ -1,7 +1,7 @@
-.PHONY: help up down test lint migrate seed connect-register connect-status
+.PHONY: help up down test lint migrate seed connect-register connect-status generate
 
 help:
-	@echo "targets: up down test lint migrate seed" 
+	@echo "targets: up down test lint migrate seed generate" 
 
 up:
 	docker compose up -d
@@ -22,6 +22,9 @@ migrate:
 
 seed:
 	$(RUN) db/seed.py
+
+generate:
+	$(RUN) db/generate.py --rate 1
 
 connect-register:
 	curl -s -X PUT -H 'Content-Type: application/json' localhost:8083/connectors/feastflow-pg/config -d @connect/pg-source.json
