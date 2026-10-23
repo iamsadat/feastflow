@@ -1,0 +1,22 @@
+{
+    "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+    "tasks.max": "1",
+    "database.hostname": "postgres",
+    "database.port": "5432",
+    "database.user": "feastflow",
+    "database.password": "${env:POSTGRES_PASSWORD}",
+    "database.dbname": "feastflow",
+    "topic.prefix": "feastflow",
+    "plugin.name": "pgoutput",
+    "slot.name": "feastflow_slot",
+    "publication.name": "feastflow_pub",
+    "publication.autocreate.mode": "disabled",
+    "table.include.list": "public.customers,public.restaurants,public.riders,public.menu_items,public.orders,public.order_items",
+    "snapshot.mode": "initial",
+    "decimal.handling.mode": "string",
+    "heartbeat.interval.ms": "60000",
+    "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "key.converter.schemas.enable": "false",
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "value.converter.schemas.enable": "false"
+  }

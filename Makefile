@@ -1,4 +1,4 @@
-.PHONY: help up down test lint migrate seed
+.PHONY: help up down test lint migrate seed connect-register connect-status
 
 help:
 	@echo "targets: up down test lint migrate seed" 
@@ -22,3 +22,9 @@ migrate:
 
 seed:
 	$(RUN) db/seed.py
+
+connect-register:
+	curl -s -X PUT -H 'Content-Type: application/json' localhost:8083/connectors/feastflow-pg/config -d @connect/pg-source.json
+
+connect-status:
+	curl -s localhost:8083/connectors/feastflow-pg/status
