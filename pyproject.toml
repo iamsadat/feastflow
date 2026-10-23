@@ -28,6 +28,5 @@ spark = [
 ]
 
 [tool.pytest.ini_options]
-markers = [
-    "integration: needs the compose stack running"
-]
+markers = ["integration: needs the compose stack running"]
+addopts = "-m 'not integration'"
