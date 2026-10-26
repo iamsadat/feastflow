@@ -1,0 +1,18 @@
+table: orders
+version: 1
+primary_key: [order_id]
+columns:
+  order_id:      {type: integer, nullable: false}
+  customer_id:   {type: integer, nullable: false}
+  restaurant_id: {type: integer, nullable: false}
+  rider_id:      {type: integer, nullable: true}
+  total_paise:   {type: integer, nullable: false, min: 1}
+  status:        {type: string,  nullable: false,
+                  enum: [PLACED, ACCEPTED, PREPARING, PICKED_UP, DELIVERED, CANCELLED]}
+  placed_at:     {type: timestamp, nullable: false}
+  accepted_at:   {type: timestamp, nullable: true}
+  picked_up_at:  {type: timestamp, nullable: true}
+  delivered_at:  {type: timestamp, nullable: true}
+  cancelled_at:  {type: timestamp, nullable: true}
+  created_at:    {type: timestamp, nullable: false}
+  updated_at:    {type: timestamp, nullable: false}

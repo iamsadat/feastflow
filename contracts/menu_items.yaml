@@ -1,0 +1,12 @@
+table: menu_items
+version: 1
+primary_key: [item_id]
+columns:
+  item_id:       {type: integer, nullable: false}
+  restaurant_id: {type: integer, nullable: false}
+  name:          {type: string,  nullable: false}
+  description:   {type: string,  nullable: true}
+  price_paise:   {type: integer, nullable: false, min: 1}
+  is_available:  {type: boolean, nullable: false}
+  created_at:    {type: timestamp, nullable: false}
+  updated_at:    {type: timestamp, nullable: false}
