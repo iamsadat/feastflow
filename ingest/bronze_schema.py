@@ -27,6 +27,8 @@ SOURCE = ("version STRING, connector STRING, name STRING, ts_ms BIGINT, ts_us BI
           "ts_ns BIGINT, snapshot STRING, db STRING, sequence STRING, schema STRING, "
           "`table` STRING, txId BIGINT, lsn BIGINT, xmin BIGINT")
 
+TRANSACTION = "id STRING, total_order BIGINT, data_collection_order BIGINT"
+
 def row_struct(contract, columns):
     fields = ", ".join(f"{name}: {SPARK_TYPES[contract['columns'][name]['type']]}"
                        for name in columns)
@@ -37,6 +39,6 @@ def bronze_ddl(contract):
     row = row_struct(contract, contract["columns"])
     key = row_struct(contract, contract["primary_key"])
     value = (f"STRUCT<before: {row}, after: {row}, source: STRUCT<{SOURCE}>, "
-             f"op: STRING, ts_ms: BIGINT, ts_us: BIGINT, ts_ns: BIGINT>")
+             f"transaction: STRUCT<{TRANSACTION}>, op: STRING, ts_ms: BIGINT, ts_us: BIGINT, ts_ns: BIGINT>")
     return (f"kafka_topic STRING, kafka_partition INT, kafka_offset BIGINT, "
             f"kafka_timestamp_ms BIGINT, key {key}, value {value}")

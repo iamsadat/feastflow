@@ -33,3 +33,8 @@ def test_every_contract_type_has_a_spark_type():
     for spec in CONTRACTS.values():
         for rule in spec["columns"].values():
             assert rule["type"] in bronze_schema.SPARK_TYPES
+
+def test_envelope_has_every_debezium_field():
+    ddl = bronze_schema.bronze_ddl(CONTRACTS["orders"])
+    for field in ("before:", "after:", "source:", "transaction:", "op:", "ts_ms:", "ts_us:", "ts_ns:"):
+        assert field in ddl
