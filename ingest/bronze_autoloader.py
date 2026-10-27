@@ -36,8 +36,14 @@ CONTRACTS = contract.load_contracts(HERE.parent / "contracts")
 
 # COMMAND ----------
 
+def row_count(name):
+    return spark.table(name).count() if spark.catalog.tableExists(name) else 0
+
+
 def load_table(table, spec):
     """One availableNow stream: new files under SOURCE/<table>/ -> TARGET.<table>_cdc."""
+    target = f"{TARGET}.{table}_cdc"
+    before = row_count(target)
     landed = (
         spark.readStream.format("cloudFiles")
         .option("cloudFiles.format", "json")
@@ -55,10 +61,13 @@ def load_table(table, spec):
         rows.writeStream
         .option("checkpointLocation", f"{STATE}/{table}/checkpoint")
         .trigger(availableNow=True)
-        .toTable(f"{TARGET}.{table}_cdc")
+        .toTable(target)
     )
     query.awaitTermination()
-    return sum(p["numInputRows"] or 0 for p in query.recentProgress)
+    # Progress metrics are best-effort on serverless (numInputRows can be None);
+    # the committed table is the truth, and Bronze is append-only, so the
+    # row delta is exactly what this run added.
+    return row_count(target) - before
 
 
 for table, spec in CONTRACTS.items():
@@ -67,26 +76,28 @@ for table, spec in CONTRACTS.items():
 # COMMAND ----------
 
 # MAGIC %sql
+# MAGIC -- lines = JSON lines under bronze_validated/<table>/, one Debezium event each.
 # MAGIC SELECT 'orders' AS t,
 # MAGIC        (SELECT count(*) FROM feastflow.bronze.orders_cdc) AS bronze,
-# MAGIC        (SELECT count(*) FROM read_files('s3://feastflow-lake-072270723370/bronze_validated/orders/', format => 'json')) AS files
-# MAGIC UNION ALL
-# MAGIC SELECT 'restaurants',
+# MAGIC        (SELECT count(_rescued_data) FROM feastflow.bronze.orders_cdc) AS rescued,
+# MAGIC        (SELECT count(*) FROM read_files('s3://feastflow-lake-072270723370/bronze_validated/orders/', format => 'json')) AS lines
+# MAGIC UNION ALL SELECT 'restaurants',
 # MAGIC        (SELECT count(*) FROM feastflow.bronze.restaurants_cdc),
+# MAGIC        (SELECT count(_rescued_data) FROM feastflow.bronze.restaurants_cdc),
 # MAGIC        (SELECT count(*) FROM read_files('s3://feastflow-lake-072270723370/bronze_validated/restaurants/', format => 'json'))
-# MAGIC UNION ALL
-# MAGIC SELECT 'riders',
+# MAGIC UNION ALL SELECT 'riders',
 # MAGIC        (SELECT count(*) FROM feastflow.bronze.riders_cdc),
+# MAGIC        (SELECT count(_rescued_data) FROM feastflow.bronze.riders_cdc),
 # MAGIC        (SELECT count(*) FROM read_files('s3://feastflow-lake-072270723370/bronze_validated/riders/', format => 'json'))
-# MAGIC UNION ALL
-# MAGIC SELECT 'customers',
+# MAGIC UNION ALL SELECT 'customers',
 # MAGIC        (SELECT count(*) FROM feastflow.bronze.customers_cdc),
+# MAGIC        (SELECT count(_rescued_data) FROM feastflow.bronze.customers_cdc),
 # MAGIC        (SELECT count(*) FROM read_files('s3://feastflow-lake-072270723370/bronze_validated/customers/', format => 'json'))
-# MAGIC UNION ALL
-# MAGIC SELECT 'order_items',
+# MAGIC UNION ALL SELECT 'order_items',
 # MAGIC        (SELECT count(*) FROM feastflow.bronze.order_items_cdc),
+# MAGIC        (SELECT count(_rescued_data) FROM feastflow.bronze.order_items_cdc),
 # MAGIC        (SELECT count(*) FROM read_files('s3://feastflow-lake-072270723370/bronze_validated/order_items/', format => 'json'))
-# MAGIC UNION ALL
-# MAGIC SELECT 'menu_items',
+# MAGIC UNION ALL SELECT 'menu_items',
 # MAGIC        (SELECT count(*) FROM feastflow.bronze.menu_items_cdc),
+# MAGIC        (SELECT count(_rescued_data) FROM feastflow.bronze.menu_items_cdc),
 # MAGIC        (SELECT count(*) FROM read_files('s3://feastflow-lake-072270723370/bronze_validated/menu_items/', format => 'json'));
