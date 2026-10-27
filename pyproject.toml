@@ -31,3 +31,6 @@ spark = [
 [tool.pytest.ini_options]
 markers = ["integration: needs the compose stack running"]
 addopts = "-m 'not integration'"
+
+[tool.databricks.environment]
+environment_version = '6'

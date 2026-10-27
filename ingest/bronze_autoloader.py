@@ -58,9 +58,35 @@ def load_table(table, spec):
         .toTable(f"{TARGET}.{table}_cdc")
     )
     query.awaitTermination()
-    progress = query.recentProgress
-    return sum(p["numInputRows"] for p in progress)
+    return sum(p["numInputRows"] or 0 for p in query.recentProgress)
 
 
 for table, spec in CONTRACTS.items():
     print(f"{table}: {load_table(table, spec)} new rows")
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC SELECT 'orders' AS t,
+# MAGIC        (SELECT count(*) FROM feastflow.bronze.orders_cdc) AS bronze,
+# MAGIC        (SELECT count(*) FROM read_files('s3://feastflow-lake-072270723370/bronze_validated/orders/', format => 'json')) AS files
+# MAGIC UNION ALL
+# MAGIC SELECT 'restaurants',
+# MAGIC        (SELECT count(*) FROM feastflow.bronze.restaurants_cdc),
+# MAGIC        (SELECT count(*) FROM read_files('s3://feastflow-lake-072270723370/bronze_validated/restaurants/', format => 'json'))
+# MAGIC UNION ALL
+# MAGIC SELECT 'riders',
+# MAGIC        (SELECT count(*) FROM feastflow.bronze.riders_cdc),
+# MAGIC        (SELECT count(*) FROM read_files('s3://feastflow-lake-072270723370/bronze_validated/riders/', format => 'json'))
+# MAGIC UNION ALL
+# MAGIC SELECT 'customers',
+# MAGIC        (SELECT count(*) FROM feastflow.bronze.customers_cdc),
+# MAGIC        (SELECT count(*) FROM read_files('s3://feastflow-lake-072270723370/bronze_validated/customers/', format => 'json'))
+# MAGIC UNION ALL
+# MAGIC SELECT 'order_items',
+# MAGIC        (SELECT count(*) FROM feastflow.bronze.order_items_cdc),
+# MAGIC        (SELECT count(*) FROM read_files('s3://feastflow-lake-072270723370/bronze_validated/order_items/', format => 'json'))
+# MAGIC UNION ALL
+# MAGIC SELECT 'menu_items',
+# MAGIC        (SELECT count(*) FROM feastflow.bronze.menu_items_cdc),
+# MAGIC        (SELECT count(*) FROM read_files('s3://feastflow-lake-072270723370/bronze_validated/menu_items/', format => 'json'));
