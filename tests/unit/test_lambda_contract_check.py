@@ -99,8 +99,8 @@ def test_eventbridge_key_is_used_as_in():
 def test_both_event_shapes_name_the_same_object():
     assert lcc.object_refs(s3_event(KEY)) == lcc.object_refs(eventbridge_event(KEY))
 
-def test_eventbridge_event_is_processed(monkeypath):
-    fake = FakeS3({(BUCKET, KEY): (landed('c', None, ORDER_ROW) + '\n').encode()})
-    monkeypatch.setattr(lcc, '_s3', fake)
+def test_eventbridge_event_is_processed(monkeypatch):
+    fake = FakeS3({(BUCKET, KEY): (landed("c", None, ORDER_ROW) + "\n").encode()})
+    monkeypatch.setattr(lcc, "_s3", fake)
 
     assert lcc.handler(eventbridge_event(KEY), None) == [{"key": KEY, "valid": 1, "rejected": 0}]
