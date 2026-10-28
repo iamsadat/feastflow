@@ -1,13 +1,8 @@
 """AWS Lambda: check every landed CDC file against its table's data contract.
 
-Trigger: S3 ObjectCreated on bronze_landing/*.jsonl (async invoke, at-least-once).
-For s3://<bucket>/bronze_landing/<table>/dt=<day>/<file>.jsonl it writes
-
-    bronze_validated/<table>/dt=<day>/<file>.jsonl    the lines that pass
-    bronze_quarantine/<table>/dt=<day>/<file>.jsonl   one {"errors", "line"} per line that fails
-
-Output keys are derived from the input key, so a duplicate event or a retry
-overwrites the same objects with the same bytes.
+Trigger: EventBridge rule landing-to-contract-check on S3 "Object Created" under
+bronze_landing/ (async invoke, at-least-once). The S3 notification shape is still
+accepted, because ingest/redrive.py sends it.
 
 Handler setting: lambda_contract_check.handler
 """
@@ -68,12 +63,21 @@ def process(s3, bucket, key):
     return {"key": key, "valid": len(valid), "rejected": len(rejected)}
 
 
+def object_refs(event):
+    """(bucket, key) for every object an event names, in either event shape."""
+    if "Records" in event:
+        # S3 notification: keys are URL-encoded, our "+" arrives as "%2B", "=" as "%3D".
+        return [(r["s3"]["bucket"]["name"], urllib.parse.unquote_plus(r["s3"]["object"]["key"]))
+                for r in event["Records"]]
+    # EventBridge "Object Created": one object, key as plain text (seen on a captured
+    # event, Oct 27). Decoding it again would turn every "+" into a space.
+    detail = event["detail"]
+    return [(detail["bucket"]["name"], detail["object"]["key"])]
+
+
 def handler(event, context):
     results = []
-    for record in event["Records"]:
-        bucket = record["s3"]["bucket"]["name"]
-        # Keys in S3 events are URL-encoded: our "+" arrives as "%2B", "=" as "%3D".
-        key = urllib.parse.unquote_plus(record["s3"]["object"]["key"])
+    for bucket, key in object_refs(event):
         results.append(process(s3_client(), bucket, key))
     print(json.dumps(results))  # one line per invoke in CloudWatch Logs
     return results

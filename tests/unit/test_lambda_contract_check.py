@@ -35,6 +35,11 @@ def s3_event(key):
     return {"Records": [{"s3": {"bucket": {"name": BUCKET}, "object": {"key": encoded}}}]}
 
 
+def eventbridge_event(key):
+    """What EventBridge sends for S3 "Object Created": the key as plain text"""
+    return {"source": "aws.s3", "detail-type": "Object Created", "detail": {"bucket": {"name": BUCKET}, "object": {"key": KEY}}}
+
+
 def lines(fake, key):
     return fake.objects[(BUCKET, key)].decode().splitlines()
 
@@ -86,3 +91,16 @@ def test_unknown_table_is_quarantined_whole(monkeypatch):
     monkeypatch.setattr(lcc, "_s3", fake)
 
     assert lcc.handler(s3_event(key), None) == [{"key": key, "valid": 0, "rejected": 1}]
+
+def test_eventbridge_key_is_used_as_in():
+    key = "bronze_landing/orders/dt=2026-10-27/x+y z.jsonl"
+    assert lcc.object_refs(eventbridge_event(key)) == [(BUCKET, KEY)]
+
+def test_both_event_shapes_name_the_same_object():
+    assert lcc.object_refs(s3_event(KEY)) == lcc.object_refs(eventbridge_event(KEY))
+
+def test_eventbridge_event_is_processed(monkeypath):
+    fake = FakeS3({(BUCKET, KEY): (landed('c', None, ORDER_ROW) + '\n').encode()})
+    monkeypatch.setattr(lcc, '_s3', fake)
+
+    assert lcc.handler(eventbridge_event(KEY), None) == [{"key": KEY, "valid": 1, "rejected": 0}]
