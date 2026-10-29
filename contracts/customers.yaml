@@ -1,0 +1,14 @@
+# Data contract for CDC events of public.customers (see docs/adr/0003).
+table: customers
+version: 1
+primary_key: [customer_id]
+columns:
+  customer_id: {type: integer, nullable: false}
+  name:        {type: string,  nullable: false}
+  email:       {type: string,  nullable: true}
+  phone:       {type: string,  nullable: false}
+  address:     {type: string,  nullable: false}
+  city:        {type: string,  nullable: false, enum: [Hyderabad, Bengaluru]}
+  zip:         {type: string,  nullable: true, pattern: '^[0-9]{6}$'}
+  created_at:  {type: timestamp, nullable: false}
+  updated_at:  {type: timestamp, nullable: false}

@@ -1,0 +1,15 @@
+table: restaurants
+version: 1
+primary_key: [restaurant_id]
+columns:
+  restaurant_id: {type: integer, nullable: false}
+  name:          {type: string,  nullable: false}
+  address:       {type: string,  nullable: false}
+  phone:         {type: string,  nullable: false}
+  city:          {type: string,  nullable: false, enum: [Hyderabad, Bengaluru]}
+  zip:           {type: string,  nullable: true, pattern: '^[0-9]{6}$'}
+  rating:        {type: decimal, nullable: true, min: 0, max: 5}
+  opens_at:      {type: time_micros, nullable: false}
+  closes_at:     {type: time_micros, nullable: false}
+  created_at:    {type: timestamp, nullable: false}
+  updated_at:    {type: timestamp, nullable: false}

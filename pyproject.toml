@@ -8,6 +8,7 @@ dependencies = [
     "boto3>=1.43.118",
     "confluent-kafka>=2.16.0",
     "psycopg[binary]>=3.3.6",
+    "pyyaml>=6.0.3",
 ]
 
 [project.scripts]
@@ -30,3 +31,6 @@ spark = [
 [tool.pytest.ini_options]
 markers = ["integration: needs the compose stack running"]
 addopts = "-m 'not integration'"
+
+[tool.databricks.environment]
+environment_version = '6'
