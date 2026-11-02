@@ -9,7 +9,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "ingest"))
-import contract  # noqa: E402
+import contract
 
 CONTRACTS = contract.load_contracts(ROOT / "contracts")
 ORDERS = CONTRACTS["orders"]

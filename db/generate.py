@@ -23,7 +23,6 @@ import time
 
 import psycopg
 
-
 IN_FLIGHT = ("PLACED", "ACCEPTED", "PREPARING", "PICKED_UP")
 
 # status -> (next status, timestamp column set on entry)
@@ -285,7 +284,7 @@ def main():
 
     try:
         counts = run(dsn, args.rate, args.max_orders, args.seed)
-    except Exception as exc:
+    except Exception as exc: # noqa: BLE001 - last resort in main(): report, exit
         print(f"Generator failed: {exc}", file=sys.stderr)
         return 1
 

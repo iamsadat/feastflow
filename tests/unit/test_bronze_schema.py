@@ -5,8 +5,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "ingest"))
-import bronze_schema  # noqa: E402
-import contract  # noqa: E402
+import bronze_schema
+import contract
 
 CONTRACTS = contract.load_contracts(ROOT / "contracts")
 

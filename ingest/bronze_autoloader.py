@@ -20,8 +20,8 @@ from pyspark.sql import functions as F
 
 HERE = Path.cwd()                        # the notebook's folder: <git folder>/ingest
 sys.path.insert(0, str(HERE))
-import bronze_schema  # noqa: E402
-import contract  # noqa: E402
+import bronze_schema
+import contract
 
 spark = SparkSession.builder.getOrCreate()  # the notebook's session; explicit so linters see it
 

@@ -8,8 +8,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "ingest"))
-import lambda_contract_check as lcc  # noqa: E402
-from test_contract import ORDER_ROW, changed, landed  # noqa: E402
+import lambda_contract_check as lcc
+from test_contract import ORDER_ROW, changed, landed
 
 BUCKET = "test-bucket"
 KEY = ("bronze_landing/orders/dt=2026-10-26/"
@@ -36,8 +36,9 @@ def s3_event(key):
 
 
 def eventbridge_event(key):
-    """What EventBridge sends for S3 "Object Created": the key as plain text"""
-    return {"source": "aws.s3", "detail-type": "Object Created", "detail": {"bucket": {"name": BUCKET}, "object": {"key": KEY}}}
+    """What EventBridge sends for S3 "Object Created": the key as plain text."""
+    return {"source": "aws.s3", "detail-type": "Object Created",
+            "detail": {"bucket": {"name": BUCKET}, "object": {"key": key}}}
 
 
 def lines(fake, key):
@@ -92,15 +93,66 @@ def test_unknown_table_is_quarantined_whole(monkeypatch):
 
     assert lcc.handler(s3_event(key), None) == [{"key": key, "valid": 0, "rejected": 1}]
 
-def test_eventbridge_key_is_used_as_in():
+
+def test_eventbridge_key_is_used_as_is():
     key = "bronze_landing/orders/dt=2026-10-27/x+y z.jsonl"
-    assert lcc.object_refs(eventbridge_event(key)) == [(BUCKET, KEY)]
+    assert lcc.object_refs(eventbridge_event(key)) == [(BUCKET, key)]
+
 
 def test_both_event_shapes_name_the_same_object():
     assert lcc.object_refs(s3_event(KEY)) == lcc.object_refs(eventbridge_event(KEY))
+
 
 def test_eventbridge_event_is_processed(monkeypatch):
     fake = FakeS3({(BUCKET, KEY): (landed("c", None, ORDER_ROW) + "\n").encode()})
     monkeypatch.setattr(lcc, "_s3", fake)
 
     assert lcc.handler(eventbridge_event(KEY), None) == [{"key": KEY, "valid": 1, "rejected": 0}]
+
+
+QUARANTINE_KEY = KEY.replace("bronze_landing/", "bronze_quarantine/")
+
+
+def quarantined(*lines_):
+    """A quarantine file as the Lambda writes it: one {"errors", "line"} per line."""
+    return "".join(json.dumps({"errors": ["old reason"], "line": x}) + "\n" for x in lines_).encode()
+
+
+def test_replay_writes_passing_lines_to_a_new_key(monkeypatch):
+    fixed = landed("c", None, ORDER_ROW)                 # passes the current contract
+    still_bad = landed("c", None, changed(status="LOST"))
+    fake = FakeS3({(BUCKET, QUARANTINE_KEY): quarantined(fixed, still_bad)})
+    monkeypatch.setattr(lcc, "_s3", fake)
+
+    [result] = lcc.handler({"replay": {"bucket": BUCKET, "key": QUARANTINE_KEY}}, None)
+
+    assert (result["replayed"], result["still_rejected"]) == (1, 1)
+    out = result["output"]
+    original = KEY.replace("bronze_landing/", "bronze_validated/")
+    assert out != original
+    assert out.startswith(original.removesuffix(".jsonl") + ".replay-") and out.endswith(".jsonl")
+    assert lines(fake, out) == [fixed]
+    assert fake.objects[(BUCKET, QUARANTINE_KEY)] == quarantined(fixed, still_bad)  # audit kept
+
+
+def test_repeated_replay_rewrites_the_same_key(monkeypatch):
+    fake = FakeS3({(BUCKET, QUARANTINE_KEY): quarantined(landed("c", None, ORDER_ROW))})
+    monkeypatch.setattr(lcc, "_s3", fake)
+    event = {"replay": {"bucket": BUCKET, "key": QUARANTINE_KEY}}
+
+    first = lcc.handler(event, None)
+    objects = dict(fake.objects)
+    second = lcc.handler(event, None)
+
+    assert first == second
+    assert fake.objects == objects
+
+
+def test_replay_with_nothing_fixed_writes_nothing(monkeypatch):
+    fake = FakeS3({(BUCKET, QUARANTINE_KEY): quarantined(landed("c", None, changed(status="LOST")))})
+    monkeypatch.setattr(lcc, "_s3", fake)
+
+    [result] = lcc.handler({"replay": {"bucket": BUCKET, "key": QUARANTINE_KEY}}, None)
+
+    assert result["output"] is None
+    assert list(fake.objects) == [(BUCKET, QUARANTINE_KEY)]
