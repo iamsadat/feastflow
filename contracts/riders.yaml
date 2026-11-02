@@ -10,6 +10,6 @@ columns:
   city:       {type: string,  nullable: false, enum: [Hyderabad, Bengaluru]}
   zip:        {type: string,  nullable: true, pattern: '^[0-9]{6}$'}
   status:     {type: string,  nullable: false, enum: [AVAILABLE, OFFLINE, ON_DELIVERY]}
-  rating:     {type: decimal, nullable: true, min: 0, max: 5}
+  rating:     {type: decimal, precision: 2, scale: 1, nullable: true, min: 0, max: 5}  # NUMERIC(2,1)
   created_at: {type: timestamp, nullable: false}
   updated_at: {type: timestamp, nullable: false}
