@@ -8,6 +8,10 @@ Step 4: for the SCD1 tables, an AUTO CDC flow folds <table>_changes into
 feastflow.silver.<table>: one row per primary key, the change with the highest
 LSN wins, `d` deletes. Duplicates and late events are handled by the engine.
 
+Step 5: <table>_changes carries expectations generated from the contract:
+envelope rules fail the update, column rules drop the row. Dropped rows land in
+feastflow.silver.<table>_quarantine with the names of the rules they broke.
+
 Pipeline configuration must set feastflow.repo_root to the Git folder, e.g.
 /Workspace/Users/<you>/feastflow, so contracts/ and ingest/ can be found.
 """
@@ -34,16 +38,32 @@ SCD1_TABLES = ["orders", "order_items", "riders", "menu_items"]
 NOT_IN_CURRENT = ["_op", "_source_file", "_ingested_at"]
 
 
+def typed_changes(table, spec):
+    bronze = spark.readStream.table(f"feastflow.bronze.{table}_cdc")
+    return silver_columns.changes(bronze, spec)
+
+
 def define_changes(table, spec):
-    """Register <table>_changes. A factory, so each closure keeps its own table."""
+    """Register <table>_changes and its quarantine. A factory, so each closure keeps its table."""
+    drop = silver_columns.drop_rules(spec)
 
     @dp.table(
         name=f"feastflow.silver.{table}_changes",
         comment=f"Typed CDC events of {table}, one per Bronze row (contract v{spec['version']}).",
     )
+    @dp.expect_all_or_fail(silver_columns.fail_rules(spec))
+    @dp.expect_all_or_drop(drop)
     def _changes():
-        bronze = spark.readStream.table(f"feastflow.bronze.{table}_cdc")
-        return silver_columns.changes(bronze, spec)
+        return typed_changes(table, spec)
+
+    @dp.table(
+        name=f"feastflow.silver.{table}_quarantine",
+        comment=f"Rows of {table} dropped by an expectation, with the rules they broke.",
+    )
+    def _quarantine():
+        rows = typed_changes(table, spec).withColumn(
+            "_failed_rules", silver_columns.failed_rules(drop))
+        return rows.where("size(_failed_rules) > 0")
 
 
 def define_current(table, spec):

@@ -89,3 +89,39 @@ def test_decimal_value(spark):
     [row] = silver_columns.changes(bronze_rows(spark, "restaurants", line),
                                    CONTRACTS["restaurants"]).collect()
     assert row.rating == Decimal("4.5")
+
+
+def test_rules_come_from_the_contract():
+    drop = silver_columns.drop_rules(CONTRACTS["customers"])
+    assert drop["city_enum"] == "city IS NULL OR city IN ('Hyderabad', 'Bengaluru', 'Chennai')"
+    assert drop["zip_pattern"] == "zip IS NULL OR zip RLIKE '^[0-9]{6}$'"
+    assert "customer_id_not_null" not in drop                 # the key is a fail rule
+    assert "customer_id_present" in silver_columns.fail_rules(CONTRACTS["customers"])
+
+
+def test_good_row_breaks_no_rule(spark):
+    out = silver_columns.changes(bronze_rows(spark, "orders", landed("c", None, ORDER_ROW)),
+                                 CONTRACTS["orders"])
+    rules = {**silver_columns.fail_rules(CONTRACTS["orders"]),
+             **silver_columns.drop_rules(CONTRACTS["orders"])}
+    [row] = out.select(silver_columns.failed_rules(rules).alias("failed")).collect()
+    assert row.failed == []
+
+
+def test_bad_row_names_the_rules_it_breaks(spark):
+    bad = changed(status="LOST", total_paise=0)
+    out = silver_columns.changes(bronze_rows(spark, "orders", landed("c", None, bad)),
+                                 CONTRACTS["orders"])
+    [row] = out.select(silver_columns.failed_rules(
+        silver_columns.drop_rules(CONTRACTS["orders"])).alias("failed")).collect()
+    assert sorted(row.failed) == ["status_enum", "total_paise_min"]
+
+
+def test_no_rule_is_ever_null(spark):
+    """A NULL verdict is neither pass nor fail; every rule must answer on an all-null row."""
+    line = landed("c", None, {}, topic="feastflow.public.customers")
+    out = silver_columns.changes(bronze_rows(spark, "customers", line), CONTRACTS["customers"])
+    rules = {**silver_columns.fail_rules(CONTRACTS["customers"]),
+             **silver_columns.drop_rules(CONTRACTS["customers"])}
+    [row] = out.select(*[F.expr(sql).isNull().alias(n) for n, sql in rules.items()]).collect()
+    assert not any(row)
