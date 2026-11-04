@@ -5,12 +5,17 @@ value.before / value.after, and decimals and timestamps are still strings.
 changes() turns one Bronze row into one flat, typed change row:
 
     <every contract column, cast to its Silver type>, _op, _lsn, _commit_ts,
-    _source_file, _ingested_at
+    _valid_ts, _source_file, _ingested_at
 
 The row image is `after` for r/c/u and `before` for d, because a delete has
 no `after` (REPLICA IDENTITY FULL gives the full `before`). Underscored
 columns are bookkeeping for AUTO CDC (step 4) and lineage; they never clash
 with a source column.
+
+_valid_ts is when this row image became true, for SCD2 validity (step 6):
+the commit time for c/u/d, but created_at for r. A snapshot row carries the
+snapshot's commit time, and nothing older is known, so the snapshot value is
+taken as valid since the row was created (ADR 0004).
 
 fail_rules() and warn_rules() turn the same contract into expectations
 (step 5): envelope rules stop the update, column rules warn (the row is kept),
@@ -43,11 +48,14 @@ def changes(bronze, contract):
     image = F.when(F.col("value.op") == "d", F.col("value.before")).otherwise(F.col("value.after"))
     columns = [image.getField(name).cast(silver_type(rule)).alias(name)
                for name, rule in contract["columns"].items()]
+    commit_ts = F.timestamp_millis(F.col("value.source.ts_ms"))
+    created = image.getField("created_at").cast("TIMESTAMP")
     return bronze.select(
         *columns,
         F.col("value.op").alias("_op"),
         F.col("value.source.lsn").alias("_lsn"),
-        F.timestamp_millis(F.col("value.source.ts_ms")).alias("_commit_ts"),
+        commit_ts.alias("_commit_ts"),
+        F.when(F.col("value.op") == "r", created).otherwise(commit_ts).alias("_valid_ts"),
         "_source_file",
         "_ingested_at",
     )

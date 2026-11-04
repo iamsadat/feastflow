@@ -15,6 +15,13 @@ event silently reverts its key to an older version (ADR 0004). Each row also
 carries _failed_rules (the names of the column rules it breaks, empty when clean),
 which AUTO CDC copies into the current table, so Gold can filter and checks can alert.
 
+Step 6: customers and restaurants keep history. An AUTO CDC flow in SCD type 2
+writes feastflow.silver.<table>_history: one row per version, __START_AT and
+__END_AT (NULL = current) taken from sequence_by = struct(_valid_ts, _lsn), so
+validity is a real timestamp and the LSN breaks ties. Only the tracked columns
+open a new version; other changes update the current version in place. A delete
+closes the current version.
+
 Pipeline configuration must set feastflow.repo_root to the Git folder, e.g.
 /Workspace/Users/<you>/feastflow, so contracts/ and ingest/ can be found.
 """
@@ -39,6 +46,11 @@ SCD1_TABLES = ["orders", "order_items", "riders", "menu_items"]
 # `d`, and lineage stays in <table>_changes. _lsn and _commit_ts stay: "version"
 # and "last changed at" of each row.
 NOT_IN_CURRENT = ["_op", "_source_file", "_ingested_at"]
+# History: the columns whose change opens a new version (track_history_column_list).
+SCD2_TABLES = {
+    "customers": ["address", "city", "zip"],
+    "restaurants": ["address", "city", "zip", "rating"],
+}
 
 
 def typed_changes(table, spec):
@@ -79,7 +91,28 @@ def define_current(table, spec):
     )
 
 
+def define_history(table, spec, tracked):
+    """Register feastflow.silver.<table>_history and its SCD2 AUTO CDC flow."""
+    target = f"feastflow.silver.{table}_history"
+    dp.create_streaming_table(
+        name=target,
+        comment=f"Every version of {table} in {tracked} (SCD2); __END_AT NULL = current.",
+    )
+    dp.create_auto_cdc_flow(
+        target=target,
+        source=f"feastflow.silver.{table}_changes",
+        keys=spec["primary_key"],
+        sequence_by=F.struct("_valid_ts", "_lsn"),
+        apply_as_deletes=F.expr("_op = 'd'"),
+        except_column_list=NOT_IN_CURRENT,
+        stored_as_scd_type=2,
+        track_history_column_list=tracked,
+    )
+
+
 for table, spec in CONTRACTS.items():
     define_changes(table, spec)
     if table in SCD1_TABLES:
         define_current(table, spec)
+    if table in SCD2_TABLES:
+        define_history(table, spec, SCD2_TABLES[table])

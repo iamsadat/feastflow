@@ -73,6 +73,19 @@ def test_values_are_cast_not_lost(spark):
     assert row.commit_us == 1793000000123 * 1000
 
 
+def test_valid_from_is_creation_for_snapshot_rows_and_commit_otherwise(spark):
+    """A snapshot row's commit time is the snapshot's; history before it is unknown."""
+    snapshot = with_commit_ms(landed("r", None, ORDER_ROW), 1793000000123)
+    update = with_commit_ms(landed("u", ORDER_ROW, changed(status="ACCEPTED")), 1793000000123)
+    out = silver_columns.changes(bronze_rows(spark, "orders", snapshot, update),
+                                 CONTRACTS["orders"])
+    rows = {r._op: r for r in out.select(
+        "_op", F.unix_micros("_valid_ts").alias("valid_us"),
+        F.unix_micros("created_at").alias("created_us")).collect()}
+    assert rows["r"].valid_us == rows["r"].created_us
+    assert rows["u"].valid_us == 1793000000123 * 1000
+
+
 def test_delete_takes_the_before_image(spark):
     [row] = silver_columns.changes(bronze_rows(spark, "orders", landed("d", ORDER_ROW, None)),
                                    CONTRACTS["orders"]).collect()
