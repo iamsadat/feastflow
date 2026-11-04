@@ -8,9 +8,12 @@ Step 4: for the SCD1 tables, an AUTO CDC flow folds <table>_changes into
 feastflow.silver.<table>: one row per primary key, the change with the highest
 LSN wins, `d` deletes. Duplicates and late events are handled by the engine.
 
-Step 5: <table>_changes carries expectations generated from the contract:
-envelope rules fail the update, column rules drop the row. Dropped rows land in
-feastflow.silver.<table>_quarantine with the names of the rules they broke.
+Step 5: <table>_changes carries expectations generated from the contract.
+Envelope rules (key, op, LSN) fail the update. Column rules only warn: the row
+is kept and the violation is counted in the event log, because dropping a change
+event silently reverts its key to an older version (ADR 0004). Each row also
+carries _failed_rules (the names of the column rules it breaks, empty when clean),
+which AUTO CDC copies into the current table, so Gold can filter and checks can alert.
 
 Pipeline configuration must set feastflow.repo_root to the Git folder, e.g.
 /Workspace/Users/<you>/feastflow, so contracts/ and ingest/ can be found.
@@ -44,26 +47,18 @@ def typed_changes(table, spec):
 
 
 def define_changes(table, spec):
-    """Register <table>_changes and its quarantine. A factory, so each closure keeps its table."""
-    drop = silver_columns.drop_rules(spec)
+    """Register <table>_changes. A factory, so each closure keeps its table."""
+    warn = silver_columns.warn_rules(spec)
 
     @dp.table(
         name=f"feastflow.silver.{table}_changes",
         comment=f"Typed CDC events of {table}, one per Bronze row (contract v{spec['version']}).",
     )
     @dp.expect_all_or_fail(silver_columns.fail_rules(spec))
-    @dp.expect_all_or_drop(drop)
+    @dp.expect_all(warn)
     def _changes():
-        return typed_changes(table, spec)
-
-    @dp.table(
-        name=f"feastflow.silver.{table}_quarantine",
-        comment=f"Rows of {table} dropped by an expectation, with the rules they broke.",
-    )
-    def _quarantine():
-        rows = typed_changes(table, spec).withColumn(
-            "_failed_rules", silver_columns.failed_rules(drop))
-        return rows.where("size(_failed_rules) > 0")
+        rows = typed_changes(table, spec)
+        return rows.withColumn("_failed_rules", silver_columns.failed_rules(warn))
 
 
 def define_current(table, spec):
