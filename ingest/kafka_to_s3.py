@@ -19,11 +19,10 @@ import os
 import signal
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import boto3
 from confluent_kafka import Consumer, KafkaException, TopicPartition
-
 
 stop_requested = False
 
@@ -75,7 +74,7 @@ def to_line(msg):
 def object_key(prefix, topic, partition, buf):
     """Deterministic name: replaying the same offsets overwrites the same object."""
     table = topic.rsplit(".", 1)[-1]
-    day = datetime.fromtimestamp(buf.first_timestamp_ms / 1000, tz=timezone.utc)
+    day = datetime.fromtimestamp(buf.first_timestamp_ms / 1000, tz=UTC)
     return (
         f"{prefix}/{table}/dt={day:%Y-%m-%d}/"
         f"{topic}+{partition}+{buf.first_offset:020d}-{buf.last_offset:020d}.jsonl"
@@ -213,7 +212,7 @@ def main(argv=None):
 
     try:
         counts = run(args)
-    except Exception as exc:
+    except Exception as exc: # noqa: BLE001 - last resort in main(): report, exit
         print(f"Sink failed: {exc}", file=sys.stderr)
         return 1
 

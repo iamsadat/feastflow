@@ -6,7 +6,6 @@ from pathlib import Path
 
 import psycopg
 
-
 # Configuration
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
@@ -172,7 +171,7 @@ def main():
         run_migrations()
         return 0
 
-    except Exception as exc:
+    except Exception as exc: # noqa: BLE001 - last resort in main(): report, exit
         print(f"Migration runner failed: {exc}", file=sys.stderr, flush=True)
         return 1
 

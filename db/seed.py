@@ -8,7 +8,6 @@ from decimal import Decimal
 import psycopg
 from psycopg import sql
 
-
 SEED = 42
 CITIES = ("Hyderabad", "Bengaluru")
 
@@ -45,169 +44,168 @@ def seed(conn):
     """Seed all reference tables in one transaction."""
     rng = random.Random(SEED)
 
-    with conn.transaction():
-        with conn.cursor() as cur:
-            # Idempotency guard.
-            already_seeded = cur.execute(
-                "SELECT EXISTS (SELECT 1 FROM customers)"
-            ).fetchone()[0]
+    with conn.transaction(), conn.cursor() as cur:
+        # Idempotency guard.
+        already_seeded = cur.execute(
+            "SELECT EXISTS (SELECT 1 FROM customers)"
+        ).fetchone()[0]
 
-            if already_seeded:
-                print("already seeded")
-                return
+        if already_seeded:
+            print("already seeded")
+            return
 
-            # 1. Restaurants.
-            restaurant_rows = []
+        # 1. Restaurants.
+        restaurant_rows = []
 
-            for i in range(50):
-                city = CITIES[i % len(CITIES)]
+        for i in range(50):
+            city = CITIES[i % len(CITIES)]
 
-                restaurant_rows.append(
-                    (
-                        f"Restaurant {i + 1:03d}",
-                        generate_phone(i),
-                        f"{i + 1} Food Street",
-                        city,
-                        generate_zip(rng, city),
-                        generate_rating(rng),
-                        time(9, 0),
-                        time(23, 0),
-                    )
-                )
-
-            copy_rows(
-                cur,
-                "restaurants",
+            restaurant_rows.append(
                 (
-                    "name",
-                    "phone",
-                    "address",
-                    "city",
-                    "zip",
-                    "rating",
-                    "opens_at",
-                    "closes_at",
-                ),
-                restaurant_rows,
+                    f"Restaurant {i + 1:03d}",
+                    generate_phone(i),
+                    f"{i + 1} Food Street",
+                    city,
+                    generate_zip(rng, city),
+                    generate_rating(rng),
+                    time(9, 0),
+                    time(23, 0),
+                )
             )
 
-            restaurant_ids = [
-                row[0]
-                for row in cur.execute(
-                    """
+        copy_rows(
+            cur,
+            "restaurants",
+            (
+                "name",
+                "phone",
+                "address",
+                "city",
+                "zip",
+                "rating",
+                "opens_at",
+                "closes_at",
+            ),
+            restaurant_rows,
+        )
+
+        restaurant_ids = [
+            row[0]
+            for row in cur.execute(
+                """
                     SELECT restaurant_id
                     FROM restaurants
                     ORDER BY restaurant_id
                     """
-                ).fetchall()
-            ]
+            ).fetchall()
+        ]
 
-            # 2. Menu items.
-            menu_rows = []
+        # 2. Menu items.
+        menu_rows = []
 
-            for restaurant_id in restaurant_ids:
-                item_count = rng.randint(10, 15)
+        for restaurant_id in restaurant_ids:
+            item_count = rng.randint(10, 15)
 
-                for i in range(item_count):
-                    menu_rows.append(
-                        (
-                            restaurant_id,
-                            f"Menu Item {i + 1:02d}",
-                            f"Item {i + 1} from restaurant {restaurant_id}",
-                            rng.choice((19900, 24900, 29900, 34900)),
-                            True,
-                        )
-                    )
-
-            copy_rows(
-                cur,
-                "menu_items",
-                (
-                    "restaurant_id",
-                    "name",
-                    "description",
-                    "price_paise",
-                    "is_available",
-                ),
-                menu_rows,
-            )
-
-            # 3. Customers.
-            customer_rows = []
-
-            for i in range(500):
-                city = CITIES[i % len(CITIES)]
-
-                # Approximately 20% NULL emails.
-                email = (
-                    None
-                    if rng.random() < 0.20
-                    else f"customer{i + 1:04d}@example.com"
-                )
-
-                customer_rows.append(
+            for i in range(item_count):
+                menu_rows.append(
                     (
-                        f"Customer {i + 1:04d}",
-                        email,
-                        generate_phone(i),
-                        f"{i + 1} Customer Lane",
-                        city,
-                        generate_zip(rng, city),
+                        restaurant_id,
+                        f"Menu Item {i + 1:02d}",
+                        f"Item {i + 1} from restaurant {restaurant_id}",
+                        rng.choice((19900, 24900, 29900, 34900)),
+                        True,
                     )
                 )
 
-            copy_rows(
-                cur,
-                "customers",
-                ("name", "email", "phone", "address", "city", "zip"),
-                customer_rows,
+        copy_rows(
+            cur,
+            "menu_items",
+            (
+                "restaurant_id",
+                "name",
+                "description",
+                "price_paise",
+                "is_available",
+            ),
+            menu_rows,
+        )
+
+        # 3. Customers.
+        customer_rows = []
+
+        for i in range(500):
+            city = CITIES[i % len(CITIES)]
+
+            # Approximately 20% NULL emails.
+            email = (
+                None
+                if rng.random() < 0.20
+                else f"customer{i + 1:04d}@example.com"
             )
 
-            # 4. Riders.
-            rider_rows = []
-
-            for i in range(100):
-                city = CITIES[i % len(CITIES)]
-
-                rider_rows.append(
-                    (
-                        f"Rider {i + 1:03d}",
-                        generate_phone(i),
-                        f"{i + 1} Rider Road",
-                        city,
-                        generate_rating(rng),
-                        "AVAILABLE",
-                    )
-                )
-
-            copy_rows(
-                cur,
-                "riders",
+            customer_rows.append(
                 (
-                    "name",
-                    "phone",
-                    "address",
-                    "city",
-                    "rating",
-                    "status",
-                ),
-                rider_rows,
+                    f"Customer {i + 1:04d}",
+                    email,
+                    generate_phone(i),
+                    f"{i + 1} Customer Lane",
+                    city,
+                    generate_zip(rng, city),
+                )
             )
 
-            # 5. Report counts.
-            for table in (
-                "restaurants",
-                "menu_items",
-                "customers",
-                "riders",
-            ):
-                count = cur.execute(
-                    sql.SQL("SELECT count(*) FROM {}").format(
-                        sql.Identifier(table)
-                    )
-                ).fetchone()[0]
+        copy_rows(
+            cur,
+            "customers",
+            ("name", "email", "phone", "address", "city", "zip"),
+            customer_rows,
+        )
 
-                print(f"{table}: {count}")
+        # 4. Riders.
+        rider_rows = []
+
+        for i in range(100):
+            city = CITIES[i % len(CITIES)]
+
+            rider_rows.append(
+                (
+                    f"Rider {i + 1:03d}",
+                    generate_phone(i),
+                    f"{i + 1} Rider Road",
+                    city,
+                    generate_rating(rng),
+                    "AVAILABLE",
+                )
+            )
+
+        copy_rows(
+            cur,
+            "riders",
+            (
+                "name",
+                "phone",
+                "address",
+                "city",
+                "rating",
+                "status",
+            ),
+            rider_rows,
+        )
+
+        # 5. Report counts.
+        for table in (
+            "restaurants",
+            "menu_items",
+            "customers",
+            "riders",
+        ):
+            count = cur.execute(
+                sql.SQL("SELECT count(*) FROM {}").format(
+                    sql.Identifier(table)
+                )
+            ).fetchone()[0]
+
+            print(f"{table}: {count}")
 
 
 def main():
@@ -226,7 +224,7 @@ def main():
 
         return 0
 
-    except Exception as exc:
+    except Exception as exc: # noqa: BLE001 - last resort in main(): report, exit
         print(f"Seeding failed: {exc}", file=sys.stderr)
         return 1
 

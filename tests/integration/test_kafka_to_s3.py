@@ -14,7 +14,7 @@ from confluent_kafka import Consumer, Producer, TopicPartition
 from confluent_kafka.admin import AdminClient, NewTopic
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "ingest"))
-import kafka_to_s3  # noqa: E402
+import kafka_to_s3
 
 pytestmark = pytest.mark.integration
 

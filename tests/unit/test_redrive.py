@@ -6,7 +6,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "ingest"))
-import redrive  # noqa: E402
+import redrive
 
 
 class FakePaginator:
@@ -47,3 +47,8 @@ def test_s3_event_encodes_key_like_s3():
     encoded = redrive.s3_event("b", key)["Records"][0]["s3"]["object"]["key"]
     assert "%2B" in encoded and "%3D" in encoded
     assert urllib.parse.unquote_plus(encoded) == key
+
+
+def test_replay_event_names_the_quarantine_key_as_is():
+    key = "bronze_quarantine/orders/dt=2026-10-26/a+0+1-2.jsonl"
+    assert redrive.replay_event("b", key) == {"replay": {"bucket": "b", "key": key}}

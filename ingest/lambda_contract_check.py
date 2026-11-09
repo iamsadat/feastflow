@@ -7,6 +7,7 @@ accepted, because ingest/redrive.py sends it.
 Handler setting: lambda_contract_check.handler
 """
 
+import hashlib
 import json
 import urllib.parse
 from pathlib import Path
@@ -63,6 +64,32 @@ def process(s3, bucket, key):
     return {"key": key, "valid": len(valid), "rejected": len(rejected)}
 
 
+def replay(s3, bucket, key):
+    """Re-check one quarantine file; write the lines that now pass under a new key."""
+    if not key.startswith(QUARANTINE):
+        raise ValueError(f"not a quarantine key: {key}")
+    relative = key[len(QUARANTINE):]           # <table>/dt=<day>/<file>.jsonl
+    table = relative.split("/", 1)[0]
+
+    body = s3.get_object(Bucket=bucket, Key=key)["Body"].read().decode("utf-8")
+    lines = [json.loads(entry)["line"] for entry in body.splitlines() if entry.strip()]
+    spec = CONTRACTS.get(table)
+    if spec is None:
+        valid, still_rejected = [], lines
+    else:
+        valid, still_rejected = contract.split_lines("\n".join(lines), spec)
+
+    output = None
+    if valid:
+        data = ("\n".join(valid) + "\n").encode()
+        digest = hashlib.sha256(data).hexdigest()[:12]
+        output = VALIDATED + relative.removesuffix(".jsonl") + f".replay-{digest}.jsonl"
+        s3.put_object(Bucket=bucket, Key=output, Body=data)
+
+    return {"key": key, "replayed": len(valid), "still_rejected": len(still_rejected),
+            "output": output}
+
+
 def object_refs(event):
     """(bucket, key) for every object an event names, in either event shape."""
     if "Records" in event:
@@ -76,6 +103,11 @@ def object_refs(event):
 
 
 def handler(event, context):
+    if "replay" in event:
+        ref = event["replay"]
+        results = [replay(s3_client(), ref["bucket"], ref["key"])]
+        print(json.dumps(results))
+        return results
     results = []
     for bucket, key in object_refs(event):
         results.append(process(s3_client(), bucket, key))

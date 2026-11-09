@@ -2,11 +2,22 @@
 
 FeastFlow is an end-to-end lakehouse for a food-delivery business, built milestone by milestone.
 
-An order generator writes orders into PostgreSQL. Debezium reads Postgres's write-ahead log (WAL) and publishes every insert, update and delete as a change event to Kafka. A landing sink writes those events continuously to Amazon S3, where a Lambda function checks every line against a data contract. Databricks Auto Loader picks up the checked files as soon as they arrive and appends them to Bronze Delta tables; Silver (CDC merge and SCD2 history) and Gold (star schema for analytics) come next. MinIO can stand in for S3, so the source half also runs entirely on a laptop.
+An order generator writes orders into PostgreSQL. Debezium reads Postgres's write-ahead log (WAL) and publishes every insert, update and delete as a change event to Kafka. A landing sink writes those events continuously to Amazon S3, where a Lambda function checks every line against a data contract. Databricks Auto Loader picks up the checked files as soon as they arrive and appends them to Bronze Delta tables. A Lakeflow Declarative Pipeline applies the changes in commit order into Silver: current-state tables and SCD2 history, checked against the same contracts. Gold (star schema for analytics) comes next. MinIO can stand in for S3, so the source half also runs entirely on a laptop.
 
-**Status:** M0 (environment and storage), M1 (source and CDC) and the Bronze half of M2 are complete. Silver and SCD2 are next; see the [roadmap](#roadmap).
+**Status:** M0 (environment and storage), M1 (source and CDC), Bronze and Silver with SCD2 are complete. Gold is next; see the [roadmap](#roadmap).
 
 ## What works today
+
+### Silver with CDC and SCD2 (branch `m3-silver`)
+- **Pipeline `feastflow_silver`** (Lakeflow Declarative Pipelines, serverless, triggered; `silver/silver_pipeline.py`). Its only source is Bronze, and every table is generated from `contracts/<table>.yaml`. Set the pipeline configuration `feastflow.repo_root` to the Git folder so contracts are loaded from the repo on every update.
+- **Typed change tables** `feastflow.silver.<table>_changes` hold one row per Bronze event (`silver/silver_columns.py`): the `after` image (or `before` for deletes), columns cast to the contract types, and `_op`, `_lsn`, `_commit_ts`, `_valid_ts`, lineage and `_failed_rules`.
+- **Current state (SCD1)** in `silver.orders`, `order_items`, `riders` and `menu_items`. AUTO CDC keys on the contract primary key, orders events by the Postgres WAL position (`_lsn`), and applies deletes. Duplicates and late events are handled by the engine.
+- **History (SCD2)** in `silver.customers_history` (tracks address, city, zip) and `silver.restaurants_history` (also tracks rating). `__START_AT`/`__END_AT` are `struct(_valid_ts, _lsn)`, so validity is a real timestamp; `__END_AT` NULL marks the current version. Snapshot rows are valid from `created_at`.
+- **Expectations from the contracts.** Envelope rules (key, op, LSN) fail the update. Column rules warn: the row is kept, the violation is counted in the event log, and the rule names are stored in `_failed_rules`, which Gold can filter on. Rows are never dropped from a change log, because dropping a change silently reverts the key to an older version.
+- **Quarantine replay.** `ingest/redrive.py --replay` re-checks quarantined lines after a contract fix and writes the ones that now pass to a new, content-addressed key, so Auto Loader loads them exactly once.
+- **Measured** (Nov 3 to 5, 2026): orders 3,927 (4,000 keys minus 73 deletes), order_items 9,874, riders 100, menu_items 624; customers_history 501 versions with 499 current (equals Postgres), restaurants_history 51 versions with 50 current. All 12 orders rules passed 13,881 rows after a full refresh. AUTO CDC's result equals an independent SQL fold (EXCEPT in both directions = 0 rows).
+- **Not built yet:** an alert on rule violations, and Gold.
+- **ADR 0004**: [Silver decisions](docs/adr/0004-silver-cdc-scd2.md).
 
 ### M2: contract-checked Bronze on AWS and Databricks
 - **Landing on S3.** The same sink now writes to `s3://feastflow-lake-<account-id>/bronze_landing/` in `ap-south-2` when `S3_ENDPOINT_URL` is unset. It runs as IAM user `feastflow-sink`, which may only `PutObject` under `bronze_landing/` (no read, no list).
@@ -108,7 +119,7 @@ An order generator writes orders into PostgreSQL. Debezium reads Postgres's writ
 | --- | --- | --- |
 | M0 | Toolchain, local Docker stack, Delta on MinIO and on S3 via Databricks | Done |
 | M1 | Source and CDC: Postgres schema, migrations, seed, order generator, Debezium into Kafka, landing in object storage | Done |
-| M2 | Bronze, Silver, SCD2: data contracts, Auto Loader into Bronze, CDC applied in order into Silver, history tables | Bronze done; Silver and SCD2 next |
+| M2 | Bronze, Silver, SCD2: data contracts, Auto Loader into Bronze, CDC applied in order into Silver, history tables | Done (Silver and SCD2 on branch `m3-silver`) |
 | M3 | Gold, governance, orchestration, AWS: star schema, access rules, Airflow, Terraform, dashboards | Planned |
 | M4 | Real-time ETA features: streaming jobs writing features to Redis and Delta | Planned |
 | M5 | Model and serving: a trained ETA model and an `/eta` API | Planned |
@@ -123,7 +134,7 @@ An order generator writes orders into PostgreSQL. Debezium reads Postgres's writ
 | CDC | Debezium 3.0 on Kafka Connect (pgoutput) | |
 | Streaming | Kafka 3.9 (KRaft), confluent-kafka | |
 | Storage | MinIO (local), Amazon S3, Delta Lake | |
-| Compute | PySpark 3.5 (local), Databricks + Unity Catalog, Auto Loader, Lakeflow Jobs | Lakeflow pipelines (Silver) |
+| Compute | PySpark 3.5 (local), Databricks + Unity Catalog, Auto Loader, Lakeflow Jobs, Lakeflow Declarative Pipelines (AUTO CDC) | |
 | Cloud | AWS S3, IAM, STS, Lambda, EventBridge, SNS/SQS (Databricks file events), CloudWatch Logs | Glue/Athena, Terraform |
 | Serving and orchestration | Redis 7 (running, not used yet) | Airflow, Redis ETA features |
 
@@ -200,7 +211,32 @@ uv run python ingest/redrive.py --bucket "$BUCKET" --dry-run   # landing files w
 
 In Databricks, run `ingest/bronze_setup.sql` once, then the Lakeflow Job `bronze_autoloader` (Git folder on this repo) starts on its own whenever files arrive in `bronze_validated/`.
 
-### 7. Run the tests
+### 7. Build Silver
+
+Create a pipeline named `feastflow_silver` in Databricks: source `silver/silver_pipeline.py` from the Git folder, serverless, triggered mode, catalog `feastflow`, configuration `feastflow.repo_root=/Workspace/Users/<you>/feastflow`, dependency `pyyaml`. Then click **Start**.
+
+- A normal update reads only the new Bronze rows.
+- Use **Full refresh** after changing a rule or a column. It rebuilds Silver from Bronze, which keeps every event.
+
+Check the rules in the event log:
+
+```sql
+WITH progress AS (
+  SELECT timestamp, origin.flow_name AS flow,
+         details:flow_progress.data_quality.dropped_records::BIGINT AS dropped,
+         from_json(details:flow_progress.data_quality.expectations,
+                   'array<struct<name string, dataset string, passed_records bigint, failed_records bigint>>') AS rules
+  FROM event_log(TABLE(feastflow.silver.orders_changes))
+  WHERE event_type = 'flow_progress' AND details:flow_progress.data_quality IS NOT NULL
+)
+SELECT timestamp, flow, dropped, r.name, r.passed_records, r.failed_records
+FROM progress LATERAL VIEW explode(rules) t AS r
+ORDER BY timestamp DESC, r.name;
+```
+
+Rows that break a column rule: `SELECT * FROM feastflow.silver.orders WHERE size(_failed_rules) > 0`.
+
+### 8. Run the tests
 
 ```bash
 make test               # unit tests, no services needed
@@ -237,7 +273,7 @@ FROM pg_replication_slots;
 ├── connect/pg-source.json   # Debezium connector config
 ├── contracts/               # data contracts, one YAML per table
 ├── db/
-│   ├── migrations/          # 0001_init.sql, 0002_cdc_publication.sql
+│   ├── migrations/          # 0001_init.sql, 0002_cdc_publication.sql, 0003_allow_chennai.sql
 │   ├── checks/              # SQL checks for the schema
 │   ├── migrate.py           # migration runner
 │   ├── seed.py              # reference data
@@ -252,6 +288,9 @@ FROM pg_replication_slots;
 │   ├── bronze_schema.py     # Spark schema for Bronze, built from contracts
 │   ├── bronze_autoloader.py # Databricks notebook: Auto Loader → Bronze
 │   └── bronze_setup.sql     # catalog and schema setup
+├── silver/
+│   ├── silver_pipeline.py   # Lakeflow pipeline: changes, SCD1 current, SCD2 history
+│   └── silver_columns.py    # typed columns and expectations from the contracts
 ├── orchestration/           # Airflow DAGs (planned, M3)
 ├── scripts/                 # helper scripts, incl. delta_smoke.py
 ├── src/feastflow/           # Python package source
