@@ -73,17 +73,32 @@ def test_values_are_cast_not_lost(spark):
     assert row.commit_us == 1793000000123 * 1000
 
 
-def test_valid_from_is_creation_for_snapshot_rows_and_commit_otherwise(spark):
-    """A snapshot row's commit time is the snapshot's; history before it is unknown."""
-    snapshot = with_commit_ms(landed("r", None, ORDER_ROW), 1793000000123)
-    update = with_commit_ms(landed("u", ORDER_ROW, changed(status="ACCEPTED")), 1793000000123)
-    out = silver_columns.changes(bronze_rows(spark, "orders", snapshot, update),
-                                 CONTRACTS["orders"])
-    rows = {r._op: r for r in out.select(
-        "_op", F.unix_micros("_valid_ts").alias("valid_us"),
-        F.unix_micros("created_at").alias("created_us")).collect()}
-    assert rows["r"].valid_us == rows["r"].created_us
-    assert rows["u"].valid_us == 1793000000123 * 1000
+def test_valid_from_comes_from_business_columns(spark):
+    """Valid time is when the change became true at the source, not when it was committed."""
+    commit_ms = 1793000000123
+    created = "2026-08-15T09:00:00.000000Z"
+    moved = "2026-09-20T14:30:00.000000Z"
+    row = changed(created_at=created, updated_at=moved)
+    lines = [
+        with_commit_ms(landed("r", None, changed(created_at=created, updated_at=created)), commit_ms),
+        with_commit_ms(landed("c", None, changed(created_at=created, updated_at=created)), commit_ms),
+        with_commit_ms(landed("u", ORDER_ROW, row), commit_ms),
+        with_commit_ms(landed("d", row, None), commit_ms),
+    ]
+    out = silver_columns.changes(bronze_rows(spark, "orders", *lines), CONTRACTS["orders"])
+    valid = {r._op: r.valid_us for r in out.select(
+        "_op", F.unix_micros("_valid_ts").alias("valid_us")).collect()}
+    assert valid["r"] == epoch_micros(datetime(2026, 8, 15, 9, 0, tzinfo=UTC))
+    assert valid["c"] == epoch_micros(datetime(2026, 8, 15, 9, 0, tzinfo=UTC))
+    assert valid["u"] == epoch_micros(datetime(2026, 9, 20, 14, 30, tzinfo=UTC))
+    assert valid["d"] == commit_ms * 1000
+
+
+def test_valid_from_falls_back_to_commit_time(spark):
+    line = with_commit_ms(landed("u", ORDER_ROW, changed(updated_at=None)), 1793000000123)
+    [row] = silver_columns.changes(bronze_rows(spark, "orders", line), CONTRACTS["orders"]).select(
+        F.unix_micros("_valid_ts").alias("valid_us")).collect()
+    assert row.valid_us == 1793000000123 * 1000
 
 
 def test_delete_takes_the_before_image(spark):

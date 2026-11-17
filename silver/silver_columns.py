@@ -12,10 +12,12 @@ no `after` (REPLICA IDENTITY FULL gives the full `before`). Underscored
 columns are bookkeeping for AUTO CDC (step 4) and lineage; they never clash
 with a source column.
 
-_valid_ts is when this row image became true, for SCD2 validity (step 6):
-the commit time for c/u/d, but created_at for r. A snapshot row carries the
-snapshot's commit time, and nothing older is known, so the snapshot value is
-taken as valid since the row was created (ADR 0004).
+_valid_ts is when this row image became true at the source (valid time), for
+SCD2 validity: created_at for r and c, updated_at for u, the commit time for d
+(a delete has no business timestamp). It falls back to the commit time if the
+column is NULL. _commit_ts is when Postgres recorded it (system time), so
+Silver keeps both clocks (ADR 0005). History mode writes backdated
+created_at/updated_at, and migration 0004 lets the trigger keep them.
 
 fail_rules() and warn_rules() turn the same contract into expectations
 (step 5): envelope rules stop the update, column rules warn (the row is kept),
@@ -48,14 +50,19 @@ def changes(bronze, contract):
     image = F.when(F.col("value.op") == "d", F.col("value.before")).otherwise(F.col("value.after"))
     columns = [image.getField(name).cast(silver_type(rule)).alias(name)
                for name, rule in contract["columns"].items()]
+    op = F.col("value.op")
     commit_ts = F.timestamp_millis(F.col("value.source.ts_ms"))
     created = image.getField("created_at").cast("TIMESTAMP")
+    updated = image.getField("updated_at").cast("TIMESTAMP")
+    valid_ts = (F.when(op.isin("r", "c"), created)
+                    .when(op == "u", updated)
+                    .otherwise(commit_ts))
     return bronze.select(
         *columns,
-        F.col("value.op").alias("_op"),
+        op.alias("_op"),
         F.col("value.source.lsn").alias("_lsn"),
         commit_ts.alias("_commit_ts"),
-        F.when(F.col("value.op") == "r", created).otherwise(commit_ts).alias("_valid_ts"),
+        F.coalesce(valid_ts, commit_ts).alias("_valid_ts"),
         "_source_file",
         "_ingested_at",
     )
